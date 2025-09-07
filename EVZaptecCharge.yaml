@@ -103,23 +103,23 @@ variables:
     {% if target_soc_sensor != "" %}
       {{ states(target_soc_sensor) | float(manual_target_soc) }}
     {% else %}
-      {{ manual_target_soc }}
+      {{ manual_target_soc | float }}
     {% endif %}
 
 action:
   - variables:
       soc_now: "{{ states(soc_sensor) | float(0) }}"
       soc_needed: "{{ target_soc - soc_now }}"
-      energy_needed: "{{ (capacity_kwh * soc_needed / 100) | float(0) }}"
+      energy_needed: "{{ (capacity_kwh | float * soc_needed / 100) | float(0) }}"
       hours_left: >-
         {% set now = now().timestamp() %}
-        {% set end = today_at(end_time).timestamp() - (buffer_minutes * 60) %}
+        {% set end = today_at(end_time).timestamp() - (buffer_minutes | float * 60) %}
         {% if end < now %}{% set end = end + 86400 %}{% endif %}
         {{ (end - now) / 3600 }}
       power_per_amp: 230 * 3 / 1000
       required_amps: "{{ (energy_needed / hours_left / power_per_amp) | round(0) }}"
       completion_time: >-
-        {% set completion_time = today_at(end_time) - timedelta(minutes=buffer_minutes) %}
+        {% set completion_time = today_at(end_time) - timedelta(minutes=buffer_minutes | float) %}
         {% if completion_time.timestamp() < now().timestamp() %}
           {{ completion_time + timedelta(days=1) }}
         {% else %}
