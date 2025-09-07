@@ -17,7 +17,6 @@ blueprint:
       name: Sensor för mål-SOC (från bilen, om tillgängligt)
       description: Välj sensor som visar bilens målprocent (valfritt)
       default: ""
-      optional: true
       selector:
         entity:
           domain: sensor
@@ -74,7 +73,6 @@ blueprint:
       name: Helper för slutlig SOC (valfri)
       description: Välj en input_number för att spara den slutgiltiga SOC-procenten.
       default: ""
-      optional: true
       selector:
         entity:
           domain: input_number
@@ -83,7 +81,6 @@ blueprint:
       name: Helper för sluttid (valfri)
       description: Välj en input_datetime för att spara när laddningen ska vara klar.
       default: ""
-      optional: true
       selector:
         entity:
           domain: input_datetime
