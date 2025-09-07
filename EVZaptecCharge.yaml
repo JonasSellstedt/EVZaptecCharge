@@ -127,7 +127,7 @@ action:
         {% endif %}
   - service: number.set_value
     target:
-      entity_id: !input charger_entity
+      entity_id: "{{ charger_entity }}"
     data:
       value: >
         {% if required_amps | int < 6 %} 6
@@ -139,7 +139,7 @@ action:
     then:
       - service: input_number.set_value
         target:
-          entity_id: !input final_soc_helper
+          entity_id: "{{ final_soc_helper }}"
         data:
           value: "{{ target_soc }}"
 
@@ -147,7 +147,7 @@ action:
     then:
       - service: input_datetime.set_datetime
         target:
-          entity_id: !input completion_time_helper
+          entity_id: "{{ completion_time_helper }}"
         data:
           datetime: "{{ completion_time.isoformat() }}"
 
