@@ -1,0 +1,157 @@
+blueprint:
+  name: Smart Nattladdning för Elbil via Zaptec
+  description: >
+    Dynamisk laddström för att nå en mål-SOC vid angiven sluttid och undvika
+    effekttoppar. Stöd för buffert (klar X minuter före sluttid), val mellan
+    bilens mål-SOC eller ett manuellt satt värde, samt valfria statistik-helpers
+    för uppföljning. Lämna fälten för statistik tomma om du inte vill använda dem.
+  domain: automation
+  input:
+    soc_sensor:
+      name: Elbilens SOC-sensor
+      description: Sensor som visar bilens aktuella batteriprocent
+      selector:
+        entity:
+          domain: sensor
+    target_soc_sensor:
+      name: Sensor för mål-SOC (från bilen, om tillgängligt)
+      description: Välj sensor som visar bilens målprocent (valfritt)
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          multiple: false
+          optional: true
+    manual_target_soc:
+      name: Manuell mål-SOC (%)
+      description: Används om ingen sensor är vald ovan
+      default: 80
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    capacity_kwh:
+      name: Batterikapacitet (kWh)
+      description: Nettokapacitet för ditt fordons batteri
+      default: 58
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 1
+          unit_of_measurement: "kWh"
+    charger_entity:
+      name: Zaptec laddström
+      description: Entitet för att sätta laddström (number.zaptec_current_limit)
+      selector:
+        entity:
+          domain: number
+    start_time:
+      name: Starttid
+      description: När laddfönstret öppnar
+      default: "22:00:00"
+      selector:
+        time: {}
+    end_time:
+      name: Sluttid
+      description: När laddningen senast ska vara klar
+      default: "06:00:00"
+      selector:
+        time: {}
+    buffer_minutes:
+      name: Buffert (minuter före sluttid)
+      description: Hur många minuter före sluttid bilen ska vara färdigladdad
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 5
+          unit_of_measurement: "min"
+    final_soc_helper:
+      name: Helper för slutlig SOC (valfri)
+      description: Välj en input_number för att spara den slutgiltiga SOC-procenten.
+      default: ""
+      selector:
+        entity:
+          domain: input_number
+          multiple: false
+          optional: true
+    completion_time_helper:
+      name: Helper för sluttid (valfri)
+      description: Välj en input_datetime för att spara när laddningen ska vara klar.
+      default: ""
+      selector:
+        entity:
+          domain: input_datetime
+          multiple: false
+          optional: true
+
+trigger:
+  - platform: time
+    at: !input start_time
+
+variables:
+  soc_sensor: !input soc_sensor
+  target_soc_sensor: !input target_soc_sensor
+  manual_target_soc: !input manual_target_soc
+  capacity_kwh: !input capacity_kwh
+  charger_entity: !input charger_entity
+  end_time: !input end_time
+  buffer_minutes: !input buffer_minutes
+
+  target_soc: >-
+    {% if target_soc_sensor != "" %}
+      {{ states(target_soc_sensor) | float(manual_target_soc) }}
+    {% else %}
+      {{ manual_target_soc }}
+    {% endif %}
+
+action:
+  - variables:
+      soc_now: "{{ states(soc_sensor) | float(0) }}"
+      soc_needed: "{{ target_soc - soc_now }}"
+      energy_needed: "{{ (capacity_kwh * soc_needed / 100) | float(0) }}"
+      hours_left: >-
+        {% set now = now().timestamp() %}
+        {% set end = today_at(end_time).timestamp() - (buffer_minutes * 60) %}
+        {% if end < now %}{% set end = end + 86400 %}{% endif %}
+        {{ (end - now) / 3600 }}
+      power_per_amp: 230 * 3 / 1000
+      required_amps: "{{ (energy_needed / hours_left / power_per_amp) | round(0) }}"
+      completion_time: >-
+        {% set completion_time = today_at(end_time) - timedelta(minutes=buffer_minutes) %}
+        {% if completion_time.timestamp() < now().timestamp() %}
+          {{ completion_time + timedelta(days=1) }}
+        {% else %}
+          {{ completion_time }}
+        {% endif %}
+  - service: number.set_value
+    target:
+      entity_id: !input charger_entity
+    data:
+      value: >
+        {% if required_amps | int < 6 %} 6
+        {% elif required_amps | int > 16 %} 16
+        {% else %} {{ required_amps }}
+        {% endif %}
+
+  - if: "{{ final_soc_helper != '' }}"
+    then:
+      - service: input_number.set_value
+        target:
+          entity_id: !input final_soc_helper
+        data:
+          value: "{{ target_soc }}"
+
+  - if: "{{ completion_time_helper != '' }}"
+    then:
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: !input completion_time_helper
+        data:
+          datetime: "{{ completion_time.isoformat() }}"
+
+mode: single
